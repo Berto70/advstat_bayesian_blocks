@@ -2,7 +2,7 @@
 #'
 #' @description Dynamic programming algorithm for solving a piecewise-constant model for
 #' various datasets. This is based on the algorithm presented in Scargle
-#' et al 2013 [1]_. This code was ported from the astroML project [2]_.
+#' et al 2013.
 #'
 #' Applications include:
 #'
@@ -16,7 +16,6 @@
 #'
 #' - Irregularly-spaced event data via the `Events` data_type
 #' - Regularly-spaced event data via the `RegularEvents` data_type
-#' - Irregularly-spaced point measurements via the `PointMeasures` data_type
 #'
 #' For more fine-tuned control over the fitness functions used, it is possible
 #' to define custom :class:`FitnessFunc` classes directly and use them with
@@ -24,12 +23,11 @@
 #'
 #' One common application of the Bayesian Blocks algorithm is the determination
 #' of optimal adaptive-width histogram bins. This uses the same fitness function
-#' as for irregularly-spaced time series events. The easiest interface for
-#' creating Bayesian Blocks histograms is the :func:`astropy.stats.histogram`
-#' function.
+#' as for irregularly-spaced time series events.
 
 # Define the Bayesian Blocks function
 bayesian_blocks <- function(t, x=NULL, p0=0.5, sigma=NULL, dt=NULL, gamma=NULL, ncp_prior=NULL, data_type='Events'){
+    
     # Validate the input data
     validation <- validate_input(t, x=NULL, sigma=NULL, data_type)
 
@@ -38,18 +36,18 @@ bayesian_blocks <- function(t, x=NULL, p0=0.5, sigma=NULL, dt=NULL, gamma=NULL, 
     x <- validation$x
     sigma <- validation$sigma
 
-    # Define the edges of the blocks
-    edges <- c(t[1], 0.5 * (t[2:length(t)] + t[1:(length(t) - 1)]), t[length(t)])
-
-    # Calculate the length of each block
-    block_length <- t[length(t)] - edges
-
     # Get the number of data points
     N <- length(t)
 
+    # Define the edges of the blocks
+    edges <- c(t[1], 0.5 * (t[2:N] + t[1:(N - 1)]), t[N])
+
+    # Calculate the length of each block
+    block_length <- t[N] - edges
+
     # Initialize the best fitness and last change point arrays
     best <- rep(0, times = N)
-    last <- rep(1, times = N)
+    last <- rep(0, times = N)
 
     # If ncp_prior is NULL, compute it
     if (is.null(ncp_prior)) {
@@ -59,34 +57,24 @@ bayesian_blocks <- function(t, x=NULL, p0=0.5, sigma=NULL, dt=NULL, gamma=NULL, 
     }
 
     # Start with the first data cell and add one cell at each iteration
-    for (K in seq(1:N)) {
+    for (K in 1:N) {
         kwds <- list()
 
         # If the data type is 'Events' or 'RegularEvents'
         if (data_type=='Events' | data_type=='RegularEvents'){
             # Calculate T_k and N_k
-            kwds$T_k <- block_length[1:K] - block_length[K + 1]
-            kwds$N_k <- rev(cumsum(rev(x[1:K])))
+            kwds$T_k <- block_length[1:K] - block_length[K + 1] # width
+            kwds$N_k <- rev(cumsum(rev(x[1:K]))) # count vect
 
             # Calculate the fitness vector
             fit_vec <- fitness_func(N_k=kwds$N_k, T_k=kwds$T_k, dt=dt)
 
         # If the data type is 'PointMeasures'
-        } else if (data_type=='PointMeasures'){
-            # Calculate a_k and b_k
-            ak_raw <- rep(1, times=length(x)) / sigma^2
-            bk_raw <- x / sigma^2
-
-            kwds$a_k <- 0.5 * rev(cumsum(rev(ak_raw[1:K])))
-            kwds$b_k <- -1 * rev(cumsum(rev(bk_raw[1:K])))
-
-            # Calculate the fitness vector
-            fit_vec <- fitness_func(a_k=kwds$a_k, b_k=kwds$b_k)
-        }
-
+        } 
+        
         # Calculate A_R
         A_R <- fit_vec - ncp_prior
-        A_R[2:length(A_R)] <- A_R[2:length(A_R)] + best[1:(K)]
+        A_R[2:K] <- A_R[2:K] + best[1:(K-1)]
 
         # Find the index of the maximum value in A_R
         i_max <- which.max(A_R)
@@ -97,14 +85,14 @@ bayesian_blocks <- function(t, x=NULL, p0=0.5, sigma=NULL, dt=NULL, gamma=NULL, 
     }
 
     # Recover the change points by iteratively peeling off the last block
-    change_points <- rep(1, times = N)
+    change_points <- rep(0, times = N)
     i_cp <- N+1
     ind <- N+1
     while (i_cp > 1) {
         i_cp <- i_cp - 1
         change_points[i_cp] <- ind
         if (ind == 1) { break }
-        ind <- last[ind]
+        ind <- last[ind-1]
     }
 
     # If i_cp is 1, set the first change point to 1
@@ -120,6 +108,7 @@ bayesian_blocks <- function(t, x=NULL, p0=0.5, sigma=NULL, dt=NULL, gamma=NULL, 
 }
 
 validate_input <- function(t, x = NULL, sigma = NULL, data_type='Events'){
+    
     # Convert 't' to numeric
     t <- as.numeric(t)
 
@@ -203,13 +192,6 @@ validate_input <- function(t, x = NULL, sigma = NULL, data_type='Events'){
         return(list(t = t, x = x, sigma = sigma))
 
     # If the data type is 'PointMeasures'
-    } else if (data_type=='PointMeasures'){
-        # If 'x' is NULL, stop the function and show an error message
-        if (is.null(x)){
-            stop("x must be specified for fitness=`PointMeasures`")
-        }
-        # Return a list with 't', 'x', and 'sigma'
-        return(list(t = t, x = x, sigma = sigma))
     }
 }
 
@@ -264,8 +246,5 @@ fitness_func <- function(N_k=NULL, T_k=NULL, dt=NULL, a_k=NULL, b_k=NULL, data_t
         return(N_k * log(N_over_M) + (M_k - N_k) * log(one_m_NM))
 
     # If the data type is 'PointMeasures'
-    } else if (data_type=='PointMeasures'){
-        # Return the fitness value calculated as (b_k * b_k) / (4 * a_k)
-        return((b_k * b_k) / (4 * a_k))
     }
 }
