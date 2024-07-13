@@ -43,18 +43,22 @@ bayesian_blocks <- function(t, x=NULL, p0=0.5, sigma=NULL, dt=NULL, gamma=NULL, 
     x <- validation$x
     sigma <- validation$sigma
 
-    # Define the edges of the blocks
-    edges <- c(t[1], 0.5 * (t[2:length(t)] + t[1:(length(t) - 1)]), t[length(t)])
-
-    # Calculate the length of each block
-    block_length <- t[length(t)] - edges
-
     # Get the number of data points
     N <- length(t)
+
+    # Define the edges of the blocks
+    edges <- c(t[1], 0.5 * (t[2:N] + t[1:(N - 1)]), t[N])
+
+    # Calculate the length of each block
+    block_length <- t[N] - edges
 
     # Initialize the best fitness and last change point arrays
     best <- rep(0, times = N)
     last <- rep(1, times = N)
+
+    # Calculate a_k and b_k
+    ak_raw <- rep(1, times=length(x)) / sigma^2
+    bk_raw <- x / sigma^2
 
     # If ncp_prior is NULL, compute it
     if (is.null(ncp_prior)) {
@@ -68,26 +72,23 @@ bayesian_blocks <- function(t, x=NULL, p0=0.5, sigma=NULL, dt=NULL, gamma=NULL, 
         kwds <- list()
 
         # If the data type is 'Events' or 'RegularEvents'
-        if (data_type=='Events' | data_type=='RegularEvents'){
-            # Calculate T_k and N_k
-            kwds$T_k <- block_length[1:K] - block_length[K + 1]
-            kwds$N_k <- rev(cumsum(rev(x[1:K])))
+        
+        # Calculate T_k and N_k
+        kwds$T_k <- block_length[1:K] - block_length[K + 1]
+        kwds$N_k <- rev(cumsum(rev(x[1:K])))
 
-            # Calculate the fitness vector
-            fit_vec <- fitness_func(N_k=kwds$N_k, T_k=kwds$T_k, dt=dt)
+        kwds$a_k = NULL
+        kwds$b_k = NULL
 
         # If the data type is 'PointMeasures'
-        } else if (data_type=='PointMeasures'){
-            # Calculate a_k and b_k
-            ak_raw <- rep(1, times=length(x)) / sigma^2
-            bk_raw <- x / sigma^2
+        if (data_type=='PointMeasures'){
 
             kwds$a_k <- 0.5 * rev(cumsum(rev(ak_raw[1:K])))
             kwds$b_k <- -1 * rev(cumsum(rev(bk_raw[1:K])))
-
-            # Calculate the fitness vector
-            fit_vec <- fitness_func(a_k=kwds$a_k, b_k=kwds$b_k)
         }
+
+        # Calculate the fitness vector
+        fit_vec <- fitness_func(N_k=kwds$N_k, T_k=kwds$T_k, dt=dt, a_k=kwds$a_k, b_k=kwds$b_k)
 
         # Calculate A_R
         A_R <- fit_vec - ncp_prior
@@ -103,13 +104,13 @@ bayesian_blocks <- function(t, x=NULL, p0=0.5, sigma=NULL, dt=NULL, gamma=NULL, 
 
     # Recover the change points by iteratively peeling off the last block
     change_points <- rep(1, times = N)
-    i_cp <- N+1
+    i_cp <- N
     ind <- N+1
     while (i_cp > 1) {
-        i_cp <- i_cp - 1
         change_points[i_cp] <- ind
         if (ind == 1) { break }
-        ind <- last[ind]
+        i_cp <- i_cp - 1
+        ind <- last[ind-1]
     }
 
     # If i_cp is 1, set the first change point to 1
@@ -124,12 +125,6 @@ bayesian_blocks <- function(t, x=NULL, p0=0.5, sigma=NULL, dt=NULL, gamma=NULL, 
     return(edges[change_points])
 }
 
-#' Function 2
-#'
-#' This function does something.
-#' @param x A parameter.
-#' @return Something.
-#' @export
 validate_input <- function(t, x = NULL, sigma = NULL, data_type='Events'){
     # Convert 't' to numeric
     t <- as.numeric(t)
@@ -224,22 +219,10 @@ validate_input <- function(t, x = NULL, sigma = NULL, data_type='Events'){
     }
 }
 
-#' Function 3
-#'
-#' This function does something.
-#' @param x A parameter.
-#' @return Something.
-#' @export
 compute_p0_prior <- function(N, p0=0.05){
             return(4 - log(73.53 * p0 * (N^-0.478)))
 }
 
-#' Function 4
-#'
-#' This function does something.
-#' @param x A parameter.
-#' @return Something.
-#' @export
 compute_ncp_prior <- function(N, p0=0.05, gamma=NULL) {
             if (!is.null(gamma)) {
                 return(-log(gamma))
@@ -250,13 +233,6 @@ compute_ncp_prior <- function(N, p0=0.05, gamma=NULL) {
             }
 }
 
-#' Function 5
-#'
-#' This function does something.
-#' @param x A parameter.
-#' @return Something.
-#' @export
-# Define the fitness function
 fitness_func <- function(N_k=NULL, T_k=NULL, dt=NULL, a_k=NULL, b_k=NULL, data_type='Events'){
 
     # If the data type is 'Events'
