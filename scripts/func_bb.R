@@ -148,7 +148,7 @@ validate_input <- function(t, x=NULL, sigma, data_type='Events'){
 
     # If 'x' is NULL
     if (is.null(x)) {
-        #print('X IS FUCKING NULL')
+        
         # If 'sigma' is not NULL, stop the function and show an error message
         if (!is.null(sigma)) {
             stop("If sigma is specified, x must be specified")
