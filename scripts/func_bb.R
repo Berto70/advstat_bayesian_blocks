@@ -55,7 +55,9 @@ bayesian_blocks <- function(t, x=NULL, p0=0.05, sigma=NULL, dt=NULL, gamma=NULL,
     ak_raw <- rep(1, times=length(x)) / sigma^2
     bk_raw <- x / sigma^2
 
-    # Start with the first data cell and add one cell at each iteration
+    #-----------------------------------------------------------------
+    # Start with first data cell; add one cell at each iteration
+    #-----------------------------------------------------------------
     for (K in seq(1:N)) {
         kwds <- list()
 
@@ -94,7 +96,9 @@ bayesian_blocks <- function(t, x=NULL, p0=0.05, sigma=NULL, dt=NULL, gamma=NULL,
         best[K] <- A_R[i_max]
     }
 
-    # Recover the change points by iteratively peeling off the last block
+    #-----------------------------------------------------------------
+    # Recover changepoints by iteratively peeling off the last block
+    #-----------------------------------------------------------------
     change_points <- rep(1, times = N)
     i_cp <- N
     ind <- N+1
